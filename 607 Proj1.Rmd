@@ -1,0 +1,134 @@
+---
+title: "607 Proj1"
+author: "Chris Ayre"
+date: "2/22/2019"
+output: html_document
+---
+
+In this project, you’re given a text file with chess tournament results where the information has some structure. Your job is to create an R Markdown file that generates a .CSV file (that could for example be imported into a SQL database) with the following information for all of the players; 
+- Player’s Name
+- Player’s State
+- Total Number of Points
+- Player’s Pre-Rating
+- Average Pre Chess Rating of Opponents
+
+
+load library 
+
+```{r}
+require(stringr) 
+require(dplyr)
+require(tidyr)
+require(knitr)
+require(readr)
+```
+
+
+load the data
+
+```{r}
+tournamentinfo = readLines("/Users/cayre/Google Drive/CUNY SPRING 19/COURSES/data 607/ASSIGNMENTS/tournamentinfo.txt")
+```
+
+
+removing dividers and rows
+
+```{r}
+tournamentinfo = str_replace_all(tournamentinfo,"-","")
+```
+
+remove empty column
+
+```{r}
+tourn = read.delim(textConnection(tournamentinfo),header = FALSE, sep = "|", stringsAsFactors = FALSE)
+
+tourn = tourn[,-11]
+```
+
+simplify and add header
+
+```{r}
+tournheader = paste(trimws(as.character(tourn[1,])), trimws(as.character(tourn[2,])))
+
+tournheader = make.names(str_sub(tournheader, 1,11))
+
+tourn = as.tbl(tourn[-1:-2,])
+names(tourn) = tournheader
+```
+
+
+fix positioning of player id and rank
+
+```{r}
+playid = seq(1,nrow(tourn),2)
+srank = seq(2,nrow(tourn),2)
+
+tournplayers = tourn[playid,]
+stateranks = select(tourn[srank,], State = Pair.Num, Pre.Rating = Player.Name)
+```
+
+
+bind coloumns then display work done
+
+```{r}
+tournplayers = bind_cols(tournplayers, stateranks)
+
+tournplayers[1:5,]
+```
+
+clean pre rating
+
+```{r}
+tournplayers = tournplayers %>% 
+  mutate(Pre.Rating = str_replace(Pre.Rating,"\\d+\\s+/ R:\\s+","")) %>% 
+  mutate(Pre.Rating = str_replace(Pre.Rating,"^[P].+|>.+","")) %>% 
+  mutate(Pre.Rating = as.integer(str_extract(Pre.Rating, "\\d+"))) 
+```
+
+clean player name, points and pair
+
+```{r}
+tournplayers = tournplayers %>% 
+  mutate(Total.Pts = as.numeric(Total.Pts),
+         Pair.Num = parse_number(Pair.Num),
+         Player.Name = trimws(Player.Name))
+```
+
+tidy format
+
+```{r}
+tournplayers = tournplayers %>%
+  gather("Round","OppPairNum", 4:10) %>% 
+  mutate(OppPairNum = parse_number(OppPairNum))
+```
+
+join player pre rating
+
+```{r}
+pratings = select(tournplayers, Pair.Num,OppPreRating = Pre.Rating) %>% distinct()
+
+tournplayers = left_join(tournplayers, pratings, by = c("OppPairNum" = "Pair.Num"))
+
+```
+
+calculate average opponent rating in final table, preview table
+
+```{r}
+tournplayers = tournplayers %>% 
+  group_by(Player.Name) %>% 
+  mutate(AvgOppPreRating = round(mean(OppPreRating, na.rm=T)))
+
+result = tournplayers %>% 
+  select(Player.Name, Player.State = State, Total.Pts, Pre.Rating, AvgOppPreRating) %>% 
+  ungroup() %>% 
+  distinct()
+
+result[1:10,]
+```
+
+export csv
+
+```{r}
+write_csv(result, "/Users/cayre/Google Drive/CUNY SPRING 19/COURSES/data 607/ASSIGNMENTS/607-Proj1.csv")
+```
+
